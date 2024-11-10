@@ -1,0 +1,21 @@
+---
+title: "Project"
+author: "Kapil Parab/Nicaise Irambona"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Importing Libraries
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+# Reading dataset
+```{r}
+data <- read.csv("data/youth_smoking_drug.csv", header = TRUE)
+```
