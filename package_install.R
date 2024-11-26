@@ -1,2 +1,5 @@
 install.packages("dplyr")
 install.packages("ggplot2")
+install.packages("tidyverse")
+install.packages("tigris")
+install.packages("ggrepel")

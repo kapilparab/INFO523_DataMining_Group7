@@ -1,0 +1,273 @@
+---
+title: "Dataset Process"
+author: "Kapil Parab/Nicaise Irambona"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Importing Libraries
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(tigris)
+library(sf)
+library(ggrepel)
+library(dplyr)
+```
+
+# Variables
+
+```{r}
+year <- "2022"
+
+read_from <- "raw"
+write_to <- "cleansed"
+
+r_base_path <- paste("data", read_from, year, sep = "/")
+w_base_path <- paste("data", write_to, sep = "/")
+```
+
+# Reading dataset
+
+```{r}
+accident_data <- read.csv(paste(r_base_path, "accident.csv", sep = "/"), header = TRUE)
+
+person_data <- read.csv(paste(r_base_path, "person.csv", sep = "/"), header = TRUE)
+```
+
+```{r}
+select_cols <- c("COUNTYNAME", "ACC_TS", "ACC_TOD", "ACC_LOC", "ST_CASE", "STATENAME", "STATE", "LATITUDE", "LONGITUD", "HARM_EVNAME", "MAN_COLLNAME", "LGT_CONDNAME", "WEATHERNAME")
+
+accident_data_mutate <- accident_data %>% 
+  mutate(
+    COUNTYNAME = str_split_i(COUNTYNAME, " \\(", 1),
+    HOUR = case_when(
+    !between(HOUR, 0, 23) ~ 0,
+    .default = HOUR
+    ),
+    MINUTE = case_when(
+      !between(MINUTE, 0, 59) ~ 0,
+      .default = MINUTE
+    ),
+    WEATHERNAME = case_when(
+      WEATHERNAME %in% c("Reported as Unknown", "Not Reported") ~ "Unknown",
+      .default = WEATHERNAME
+    ),
+      ACC_TS = ymd_hm(paste0(YEAR, "-", MONTH, "-", DAY, " ", HOUR, ":", MINUTE)),
+     ACC_TOD = case_when(
+       between(hour(ACC_TS), 00, 05) ~ "Night",
+       between(hour(ACC_TS), 06, 08) ~ "Early Morning",
+       between(hour(ACC_TS), 09, 11) ~ "Morning",
+       between(hour(ACC_TS), 12, 16) ~ "Afternoon",
+       between(hour(ACC_TS), 17, 20) ~ "Evening",
+       .default = "Night"
+     ),
+     ACC_LOC = case_when(
+       RELJCT2NAME == "Intersection" ~ TYP_INTNAME,
+       .default = RELJCT2NAME
+     ),
+      LGT_CONDNAME = case_when(
+        LGT_CONDNAME %in% c("Reported as Unknown", "Not Reported") & ACC_TOD %in% c("Night", "Evening", "Early Morning") ~ "Dark - Unknown Lighting",
+        LGT_CONDNAME %in% c("Reported as Unknown", "Not Reported") & ACC_TOD %in% c("Afternoon", "Morning") ~ "Daylight",
+        .default = LGT_CONDNAME
+      )
+   ) %>%
+  rename_with(toupper) %>% 
+  subset(., select = names(.) %in% select_cols) %>%
+  group_by(STATENAME) %>%
+  mutate(
+    LATITUDE = case_when(
+      !between(LATITUDE, -91, 91) | LATITUDE %in% c(77.77770, 88.88880) ~ round(
+        mean(
+          LATITUDE[
+            between(LATITUDE, -91, 91) & 
+              !(LATITUDE %in% c(77.77770, 88.88880))
+          ], 
+          na.rm = TRUE), 5
+      ),
+      .default = LATITUDE
+    ),
+    LONGITUD = case_when(
+      !between(LONGITUD, -181, 181) | LONGITUD %in% c(777.7777, 888.8888) ~ round(
+        mean(
+          LONGITUD[
+            between(LONGITUD, -181, 181) & 
+              !(LONGITUD %in% c(777.7777, 888.8888))
+          ], 
+          na.rm = TRUE), 4
+        ),
+      .default = LONGITUD
+    )
+  ) %>%
+  ungroup()
+```
+
+
+```{r}
+select_cols = c("ST_CASE", "STATENAME", "COUNTYNAME", "ACC_TS", "ACC_TOD", "LGT_CONDNAME", "WEATHERNAME", "ACC_LOC", "LATITUDE", "LONGITUD", "HARM_EVNAME.x", "MOD_YEAR", "VPICMAKENAME", "VPICMODELNAME", "VEH_CATEGORY", "AGE", "SEXNAME", "PER_TYPNAME", "SEAT_POSNAME", "REST_USENAME", "REST_MISUSE", "HELM_USENAME", "HELM_MISNAME", "COLL_EV_TYPE", "IMPACT_LOC", "DRINKING_FLAG", "DRUGS_FLAG", "ROLLOVER", "FIRE_FLAG", "EJ_DEGREE", "EJ_PATH", "AIRBAG_DEPLOYED", "AIR_BAGNAME", "AIRBAG_LOC", "IS_DEAD")
+
+accident_clean <- person_data %>%   
+  rename_with(toupper) %>% 
+  inner_join(accident_data_mutate, person_data, by = c("ST_CASE" = "ST_CASE", "STATENAME" = "STATENAME", "STATE" = "STATE")) %>%
+  mutate(
+    across(c("VPICMAKENAME", "VPICMODELNAME", "VPICBODYCLASSNAME"),
+           ~ifelse(.== "", NA, as.character(.)))
+    ) %>%
+  mutate(
+         VEH_CATEGORY = case_when(
+           grepl("Motorcycle - ", VPICBODYCLASSNAME) ~ "Motorcycle",
+           grepl("Crossover ", VPICBODYCLASSNAME) ~ "CUV",
+           grepl("Sport Utility Vehicle ", VPICBODYCLASSNAME) ~ "SUV/MPV",
+           grepl("Sport Utility Truck ", VPICBODYCLASSNAME) ~ "SUT",
+           grepl("Off-road Vehicle ", VPICBODYCLASSNAME) ~ "Off-road",
+           grepl("Incomplete - ", VPICBODYCLASSNAME) ~ str_split_i(VPICBODYCLASSNAME, "Incomplete - ", 2),
+           VPICBODYCLASSNAME %in% c(NA, "Unknown", "Not Reported", "Incomplete") ~ "Unknown",
+           .default = VPICBODYCLASSNAME
+         ),
+       IS_DEAD = case_when(
+           INJ_SEVNAME == "Fatal Injury (K)" ~ 1,
+           .default = 0
+         ),
+     DRINKING_FLAG = case_when(
+      grepl("Yes ", DRINKINGNAME) ~ "Yes",
+      grepl("No ", DRINKINGNAME) ~ "No",
+      .default = "Not Reported"
+      ),
+      DRUGS_FLAG = case_when(
+        grepl("Yes ", DRUGSNAME) ~ "Yes",
+        grepl("No ", DRUGSNAME) ~ "No",
+        .default = "Not Reported"
+      ),
+      ROLLOVER = case_when(
+        grepl("Rollover", ROLLOVERNAME) ~ "Yes",
+        grepl("No Rollover", ROLLOVERNAME) ~ "No",
+        .default = NA
+      ),
+     IMPACT_LOC = case_when(
+      grepl("Clock Point", IMPACT1NAME) ~ case_when(
+        grepl("1", IMPACT1NAME) | grepl("2", IMPACT1NAME) ~ "Right-Front Side",
+        grepl("4", IMPACT1NAME) | grepl("5", IMPACT1NAME) ~ "Right-Back Side",
+        grepl("7", IMPACT1NAME) | grepl("8", IMPACT1NAME) ~ "Left-Back Side",
+        grepl("10", IMPACT1NAME) | grepl("11", IMPACT1NAME) ~ "Left-Front Side",
+        grepl("12", IMPACT1NAME) ~ "Front",
+        grepl("3", IMPACT1NAME) ~ "Right",
+        grepl("6", IMPACT1NAME) ~ "Back",
+        grepl("9", IMPACT1NAME) ~ "Left",
+      ),
+      .default = IMPACT1NAME
+    ),
+    FIRE_FLAG = case_when(
+      FIRE_EXPNAME == "Yes" ~ 1,
+      .default = 0
+    ),
+    HARM_EVNAME.x = case_when(
+      HARM_EVNAME.x == "Reported as Unknown" ~ "Unknown",
+      .default = HARM_EVNAME.x
+    ),
+    COLL_EV_TYPE = case_when(
+      grepl("First", MAN_COLLNAME.x) ~ "Fixed/Not Fixed Object Collision",
+      MAN_COLLNAME.x == "Reported as Unknown" ~ "Unknown",
+      .default = MAN_COLLNAME.x
+    ),
+    AGE = ifelse(AGE %in% c(998, 999), round(mean(AGE, na.rm = TRUE), 0), AGE),
+    SEXNAME = case_when(
+      SEXNAME %in% c("Reported as Unknown", "Not Reported") ~ "Unknown",
+      grepl("Non-Binary", SEXNAME) ~ "Other",
+      .default = SEXNAME
+    ),
+    SEAT_POSNAME = case_when(
+      SEAT_POSNAME %in% c("Reported as Unknown", "Not Reported") ~ "Unknown",
+      .default = SEAT_POSNAME
+    ),
+    REST_USENAME = case_when(
+      REST_USENAME %in% c("Reported as Unknown", "Not Reported") ~ "Unknown",
+      grepl("None Used/", REST_USENAME) ~ "None Used",
+      .default = REST_USENAME
+    ),
+    REST_MISUSE = case_when(
+      grepl("None Used/", REST_MISNAME) ~ "None Used",
+      grepl("Yes", REST_MISNAME) ~ "Yes",
+      grepl("No Indication", REST_MISNAME) ~ "No",
+      .default = REST_MISNAME
+    ),
+    EJ_DEGREE = case_when(
+      EJECTIONNAME %in% c("Reported as Unknown if Ejected", "Not Reported") ~ "Unknown",
+      .default = EJECTIONNAME
+    ),
+    EJ_PATH = case_when(
+      EJ_PATHNAME == "Ejection Path Unknown" ~ "Unknown",
+      EJ_PATHNAME == "Ejection Path Not Applicable" ~ "Not Applicable",
+      grepl("Other ", EJ_PATHNAME) ~ "Other",
+      grepl(" Roof ", EJ_PATHNAME) ~ "Through Roof",
+      .default = EJ_PATHNAME
+    ),
+    PER_TYPNAME = case_when(
+      grepl("Driver of", PER_TYPNAME) ~ "Driver",
+      grepl("Passenger of", PER_TYPNAME) ~ "Passenger",
+      grepl("Unknown Occupant", PER_TYPNAME) ~ "Unknown/Passenger",
+      grepl("Occupant of", PER_TYPNAME) ~ "Stationary MV Occupant",
+    ),
+    AIRBAG_DEPLOYED = case_when(
+      grepl("Deployed-", AIR_BAGNAME) ~ 1,
+      .default = 0
+    ),
+    AIRBAG_LOC = case_when(
+      grepl("Deployed-", AIR_BAGNAME) ~ str_split_i(AIR_BAGNAME, "Deployed- ", 2),
+      AIR_BAGNAME == "Reported as Deployment Unknown" ~ "Unknown",
+      .default = AIR_BAGNAME
+    )
+    ) %>%
+  subset(., select = names(.) %in% select_cols) %>%
+  rename(., STATE = STATENAME, CASE_ID = ST_CASE, HARM_EV_TYPE = HARM_EVNAME.x, VEH_MOD_YEAR = MOD_YEAR, VEH_BRAND = VPICMAKENAME, VEH_MODEL = VPICMODELNAME, SEX = SEXNAME, PERSON_TYPE = PER_TYPNAME, SEAT_POS = SEAT_POSNAME, RESTRAINT = REST_USENAME, LONGITUDE = LONGITUD, LIGHT_COND = LGT_CONDNAME, WEATHER = WEATHERNAME, COUNTY = COUNTYNAME)
+```
+
+```{r}
+vehicles <- accident_clean %>% 
+  filter(., VEH_CATEGORY != "Motorcycle" & !is.na(VEH_MOD_YEAR)) %>%
+  within(., rm("HELM_USENAME", "HELM_MISNAME")) %>%
+  select("CASE_ID", "STATE", "COUNTY", "VEH_MOD_YEAR", "VEH_BRAND", "VEH_MODEL", "VEH_CATEGORY", "LATITUDE", "LONGITUDE", "ACC_TS", "ACC_TOD", "ACC_LOC", "LIGHT_COND", "WEATHER", "AGE", "SEX", "DRINKING_FLAG", "DRUGS_FLAG", "PERSON_TYPE", "SEAT_POS", "RESTRAINT", "REST_MISUSE", "IMPACT_LOC", "ROLLOVER", "FIRE_FLAG", "HARM_EV_TYPE", "COLL_EV_TYPE", "EJ_PATH", "EJ_DEGREE", "AIRBAG_DEPLOYED", "AIRBAG_LOC", "IS_DEAD")
+
+write.csv(vehicles, 
+          paste(w_base_path, "vehicles", 
+                paste(year, "csv", sep = "."), 
+                sep = "/"), 
+          row.names = FALSE)
+
+View(vehicles)
+```
+
+```{r}
+motorcycle <- accident_clean %>% 
+  filter(., VEH_CATEGORY == "Motorcycle") %>%
+  mutate(
+    SEAT_POS = case_when(
+      SEAT_POS == "Front Seat, Left Side" ~ "Rider",
+      .default = "Pillion"
+    ),
+    HELMET_PRESENT = case_when(
+      grepl("DOT", HELM_USENAME) ~ 1,
+      .default = 0
+    ),
+    HELMET_MISUSE = case_when(
+      grepl("None Used/", HELM_MISNAME) ~ "None Used",
+      grepl("Yes", HELM_MISNAME) ~ "Yes",
+      grepl("No Indication", HELM_MISNAME) ~ "No",
+      .default = HELM_MISNAME
+    ),
+  ) %>%
+    within(., rm("AIRBAG_DEPLOYED", "HELM_USENAME", "PERSON_TYPE", "RESTRAINT", "REST_MISUSE", "HELM_MISNAME", "EJ_PATH", "ROLLOVER", "EJ_DEGREE")) %>%
+  select("CASE_ID", "STATE", "COUNTY", "VEH_MOD_YEAR", "VEH_BRAND", "VEH_MODEL", "VEH_CATEGORY", "LATITUDE", "LONGITUDE", "ACC_TS", "ACC_TOD", "ACC_LOC", "LIGHT_COND", "WEATHER", "AGE", "SEX", "DRINKING_FLAG", "DRUGS_FLAG", "SEAT_POS", "IMPACT_LOC", "FIRE_FLAG", "HARM_EV_TYPE", "COLL_EV_TYPE", "HELMET_PRESENT", "HELMET_MISUSE", "IS_DEAD")
+
+write.csv(motorcycle, 
+          paste(w_base_path, "motorcycles", 
+                paste(year, "csv", sep = "."), 
+                sep = "/"), 
+          row.names = FALSE)
+
+View(motorcycle)
+```
