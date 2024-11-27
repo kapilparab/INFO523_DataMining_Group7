@@ -18,125 +18,260 @@ library(tidyverse)
 ```
 
 ```{r}
-# Getting city outlines for Arizona
-arizona_city_outline <- st_read("data/arizona_city_boundary/arizona_city.shp") %>%
+# US States
+us_states <- st_read("data/us_states/tl_2024_us_state.shp") %>%
   st_transform(., crs = 4326)
 
 # Getting Arizona state shape file
 az_counties <- counties("AZ", year = 2024) %>% st_transform(., crs = 4326)
 
+az_landmarks <- landmarks("AZ", year = 2024) %>% st_transform(., crs = 4326)
+
 az_road <- primary_secondary_roads("AZ", year = 2024) %>% st_transform(., crs = 4326)
+
+# City outlines for Arizona
+az_city_outline <- st_read("data/arizona_city_boundary/arizona_city.shp") %>%
+  st_transform(., crs = 4326)
 ```
+
 # Reading dataset
 
 ```{r}
-
 vehicles <-
-    list.files(path = "./data/cleansed/vehicles/", pattern = "*.csv", full.names = TRUE) %>% 
-    map_df(~read_csv(., show_col_types = FALSE))
+  list.files(path = "./data/cleansed/vehicles/", pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~ read_csv(., show_col_types = FALSE))
 
 motorcycles <-
-    list.files(path = "./data/cleansed/motorcycles/", pattern = "*.csv", full.names = TRUE) %>% 
-    map_df(~read_csv(., show_col_types = FALSE))
-
+  list.files(path = "./data/cleansed/motorcycles/", pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~ read_csv(., show_col_types = FALSE))
 ```
 
+# Visualizing vehicle accidents across US
+
 ```{r}
-crash_moto <- motorcycles %>%
-  filter(., STATE == "Arizona") %>%
-  select(CASE_ID, ACC_TS, VEH_BRAND, LATITUDE, LONGITUDE) %>% distinct()
+state_accidents <- vehicles %>%
+  select(CASE_ID, STATE) %>%
+  distinct() %>%
+  group_by(STATE) %>%
+  summarise(COUNT = n())
 
-crash_veh <- vehicles %>%
-  filter(., STATE == "Arizona") %>%
-  select(CASE_ID, ACC_TS, VEH_CATEGORY, LATITUDE, LONGITUDE) %>% distinct()
+us_states_veh <- inner_join(us_states, state_accidents, by = c("NAME" = "STATE"))
 
+us_state_veh_label <- tail(us_states_veh[order(us_states_veh$COUNT), ], 15)
 
+ggplot(us_states_veh) +
+  geom_sf(aes(fill = COUNT), color = "white") +
+  coord_sf(xlim = c(-70, -170)) +
+  geom_label_repel(
+    data = us_state_veh_label,
+    aes(label = NAME, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 2,
+    min.segment.length = 0
+  ) +
+  theme_bw() +
+  labs(title = "Vehicle Accidents across United States", subtitle = "2020-2022") +
+  theme(
+    axis.title = element_blank(),
+    axis.ticks = element_blank(),
+    legend.position = "inside",
+    legend.direction = "horizontal",
+    legend.title.position = "top",
+    legend.position.inside = c(0.8, 0.82),
+    legend.spacing.x = unit(0.5, "cm"),
+    legend.background = element_blank(),
+    plot.background = element_rect(fill = "white")
+  ) +
+  guides(fill = guide_colorbar(
+    title = "Count of Accidents",
+    label.position = "bottom",
+    title.position = "top",
+    title.vjust = 1,
+    frame.colour = "black",
+    barwidth = 8,
+    barheight = 1.5
+  ))
+
+ggsave("veh_acc_us.png", path = "plots")
 ```
-
+# Visualizing motorcycle accidents across US
 
 ```{r}
+state_accidents <- motorcycles %>%
+  select(CASE_ID, STATE) %>%
+  distinct() %>%
+  group_by(STATE) %>%
+  summarise(COUNT = n())
+
+us_states_moto <- inner_join(us_states, state_accidents, by = c("NAME" = "STATE"))
+
+us_state_moto_label <- tail(us_states_moto[order(us_states_moto$COUNT), ], 15)
+
+ggplot(us_states_moto) +
+  geom_sf(aes(fill = COUNT), color = "white") +
+  coord_sf(xlim = c(-70, -170)) +
+  geom_label_repel(
+    data = us_state_moto_label,
+    aes(label = NAME, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 2,
+    min.segment.length = 0
+  ) +
+  theme_bw() +
+  labs(title = "Motorcycle Accidents across United States", subtitle = "2020-2022") +
+  theme(
+    axis.title = element_blank(),
+    axis.ticks = element_blank(),
+    legend.position = "inside",
+    legend.direction = "horizontal",
+    legend.title.position = "top",
+    legend.position.inside = c(0.8, 0.82),
+    legend.spacing.x = unit(0.5, "cm"),
+    legend.background = element_blank(),
+    plot.background = element_rect(fill = "white")
+  ) +
+  guides(fill = guide_colorbar(
+    title = "Count of Accidents",
+    label.position = "bottom",
+    title.position = "top",
+    title.vjust = 1,
+    frame.colour = "black",
+    barwidth = 8,
+    barheight = 1.5
+  ))
+
+ggsave("veh_moto_us.png", path = "plots")
+```
+# Filtering dataset to visualize Arizona accidents
+
+```{r}
+crash_moto_az <- motorcycles %>%
+  filter(., STATE == "Arizona") %>%
+  select(CASE_ID, ACC_TS, VEH_BRAND, LATITUDE, LONGITUDE) %>%
+  distinct()
+
+crash_veh_az <- vehicles %>%
+  filter(., STATE == "Arizona") %>%
+  select(CASE_ID, ACC_TS, VEH_CATEGORY, LATITUDE, LONGITUDE) %>%
+  distinct()
+
 az_city_labels <- tail(
-  arizona_city_outline[order(arizona_city_outline$Shape__Are),],
-  5
+  az_city_outline[order(az_city_outline$Shape__Are), ],
+  10
 )
 ```
 
+# Plotting roadways and city outlines for Arizona
 
 ```{r}
-ggplot() + 
+ggplot() +
   geom_sf(data = az_counties, fill = "white") +
-  geom_sf(data = arizona_city_outline, fill = "grey") +
-  geom_sf(data = az_road, fill = "green") +
-  geom_point(data = crash_veh, aes(x = LONGITUDE, y = LATITUDE), size = 1, color = alpha("red", 0.2)) +
+  geom_sf(data = az_city_outline, fill = "green") +
+  geom_sf(data = az_road, color = "black") +
   geom_label_repel(
     data = az_city_labels,
     aes(label = Name, geometry = geometry),
     stat = "sf_coordinates",
     size = 2,
-    min.segment.length = 0
+    max.iter = 50000,
+    max.time = 6,
+    max.overlaps = 12
   ) +
-  labs(title = "Vehicle Crashes in Arizona", subtitle = "2020-2022") + coord_sf() +
+  labs(title = "Cities and Major Roadways of Arizona") +
   theme(axis.title = element_blank(), axis.ticks = element_blank())
+
+ggsave("az_city_roadways.png", path = "plots")
 ```
 
+# Plotting vehicle crashes for Arizona
+
 ```{r}
-ggplot() + 
+ggplot() +
   geom_sf(data = az_counties, fill = "white") +
-  geom_sf(data = arizona_city_outline, fill = "grey") +
-  geom_sf(data = az_road, fill = "green") +
-  geom_point(data = crash_moto, aes(x = LONGITUDE, y = LATITUDE), size = 1, color = alpha("red", 0.2)) +
+  geom_sf(data = az_city_outline, fill = "green") +
+  geom_sf(data = az_road, color = "black") +
+  geom_point(data = crash_veh_az, aes(x = LONGITUDE, y = LATITUDE), size = 1, color = alpha("red", 0.2)) +
   geom_label_repel(
     data = az_city_labels,
     aes(label = Name, geometry = geometry),
     stat = "sf_coordinates",
     size = 2,
-    min.segment.length = 0
+    max.iter = 50000,
+    max.time = 6,
+    max.overlaps = 12
   ) +
-  labs(title = "Motorcycle Crashes in Arizona", subtitle = "2020-2022") + coord_sf() +
+  labs(title = "Vehicle Crashes in Arizona", subtitle = "2020-2022") +
   theme(axis.title = element_blank(), axis.ticks = element_blank())
+
+ggsave("az_veh_acc.png", path = "plots")
+```
+
+# Plotting motorcycle crashes for Arizona
+
+```{r}
+ggplot() +
+  geom_sf(data = az_counties, fill = "white") +
+  geom_sf(data = az_city_outline, fill = "green") +
+  geom_sf(data = az_road, color = "black") +
+  geom_point(data = crash_moto_az, aes(x = LONGITUDE, y = LATITUDE), size = 1, color = alpha("red", 0.2)) +
+  geom_label_repel(
+    data = az_city_labels,
+    aes(label = Name, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 2,
+    max.iter = 50000,
+    max.time = 6,
+    max.overlaps = 12
+  ) +
+  labs(title = "Motorcycle Crashes in Arizona", subtitle = "2020-2022") +
+  theme(axis.title = element_blank(), axis.ticks = element_blank())
+
+ggsave("az_moto_acc.png", path = "plots")
+```
+
+# Zooming in into vehicle crashes of Tucson
+
+```{r}
+tucson_outline <- az_city_outline %>% filter(., Name == "Tucson")
+
+tucson_crash <- merge(crash_veh_az, crash_moto_az)
+
+ua_outline <- az_landmarks %>% filter(., FULLNAME == "Univ of Arizona" & POINTID == 1101255267590)
 ```
 
 ```{r}
-# Vehicle crashes over years
-crash_veh_yr <- crash_veh %>% mutate(ACC_YEAR = year(ACC_TS)) %>%
-  select(ACC_YEAR, VEH_CATEGORY) %>%
-  group_by(ACC_YEAR, VEH_CATEGORY) %>%
-  summarise(total_count = n()) %>%
-  filter(., VEH_CATEGORY != "Unknown") %>%
-  slice_max(order_by = total_count, n = 10)
+ggplot() +
+  geom_sf(data = tucson_outline, fill = "grey") +
+  geom_sf(data = ua_outline, fill = "blue") +
+  geom_sf(data = az_road, color = "black") +
+  geom_point(data = crash_veh_az, aes(x = LONGITUDE, y = LATITUDE), size = 1, color = alpha("red", 0.5)) +
+  geom_point(data = crash_moto_az, aes(x = LONGITUDE, y = LATITUDE), size = 1, color = alpha("green", 0.5)) +
+  geom_label_repel(
+    data = ua_outline,
+    aes(label = FULLNAME, geometry = geometry),
+    stat = "sf_coordinates",
+    size = 2
+  ) +
+  labs(title = "Vehicle & Motorcycle Crashes in Arizona", subtitle = "2020-2022") +
+  theme_bw() +
+  theme(axis.title = element_blank(), axis.ticks = element_blank()) +
+  coord_sf(xlim = c(-111.2, -110.7), ylim = c(31.98, 32.4))
 
-ggplot(crash_veh_yr, aes(x = VEH_CATEGORY, y = total_count, fill = VEH_CATEGORY)) + 
-  geom_bar(stat = "identity") +
-  coord_flip() +
-  theme(legend.position = "none", axis.title.y = element_blank()) +
-  facet_grid(. ~ ACC_YEAR)
+ggsave("tucson_acc.png", path = "plots")
 ```
 
-```{r}
-# Vehicle crashes over years
-crash_moto_yr <- crash_moto %>% mutate(ACC_YEAR = year(ACC_TS)) %>%
-  select(ACC_YEAR, VEH_BRAND) %>%
-  group_by(ACC_YEAR, VEH_BRAND) %>%
-  summarise(total_count = n(), .groups = "drop") %>%
-  filter(., VEH_BRAND != "Unknown") %>%
-  group_by(ACC_YEAR) %>%
-  slice_max(order_by = total_count, n = 10)
-
-ggplot(crash_moto_yr, aes(x = VEH_BRAND, y = total_count, fill = VEH_BRAND)) + 
-  geom_bar(stat = "identity") +
-  coord_flip() +
-  theme(legend.position = "none", axis.title.y = element_blank()) +
-  facet_grid(. ~ ACC_YEAR)
-```
+# Visualizing accident trend based on Time of Day
 
 ```{r}
-crash_veh_hr <- crash_veh %>% mutate(ACC_HR = hour(ACC_TS)) %>%
+crash_veh_hr <- crash_veh_az %>%
+  mutate(ACC_HR = hour(ACC_TS)) %>%
   select(ACC_HR) %>%
   mutate(CAT = "Vehicles") %>%
   group_by(ACC_HR, CAT) %>%
   summarise(total_count = n())
 
-crash_moto_hr <- crash_moto %>% mutate(ACC_HR = hour(ACC_TS)) %>%
+crash_moto_hr <- crash_moto_az %>%
+  mutate(ACC_HR = hour(ACC_TS)) %>%
   select(ACC_HR) %>%
   mutate(CAT = "Motorcycles") %>%
   group_by(ACC_HR, CAT) %>%
@@ -150,29 +285,35 @@ ggplot(data = hr_merge, aes(x = ACC_HR, y = total_count, group = CAT, color = CA
   scale_x_continuous(breaks = 0:23, name = "Hour") +
   scale_y_continuous(breaks = c(0, 20, 40, 60, 80, 100, 150, 200, 250, 300, 350, 400, 450, 500), name = "Count") +
   labs(y = "Total Count", color = "Category") +
-  theme_minimal() +
+  theme_bw() +
   theme(
-    legend.position = "inside", 
+    legend.position = "inside",
     legend.direction = "horizontal",
     legend.title.position = "top",
     legend.position.inside = c(0.19, 0.9),
     legend.background = element_rect(fill = "lightgrey"),
     axis.line = element_blank(),
     panel.grid.minor = element_blank()
-    ) + 
+  ) +
   labs(
     title = "Accidents in Arizona based on Time of Day", subtitle = "2020-2022"
   )
+
+ggsave("az_tod.png", path = "plots")
 ```
 
+# Visualizing accident trend based on Day of Month
+
 ```{r}
-crash_veh_dt <- crash_veh %>% mutate(ACC_DATE = day(ACC_TS)) %>%
+crash_veh_dt <- crash_veh_az %>%
+  mutate(ACC_DATE = day(ACC_TS)) %>%
   select(ACC_DATE) %>%
   mutate(CAT = "Vehicles") %>%
   group_by(ACC_DATE, CAT) %>%
   summarise(total_count = n())
 
-crash_moto_dt <- crash_moto %>% mutate(ACC_DATE = day(ACC_TS)) %>%
+crash_moto_dt <- crash_moto_az %>%
+  mutate(ACC_DATE = day(ACC_TS)) %>%
   select(ACC_DATE) %>%
   mutate(CAT = "Motorcycles") %>%
   group_by(ACC_DATE, CAT) %>%
@@ -180,7 +321,7 @@ crash_moto_dt <- crash_moto %>% mutate(ACC_DATE = day(ACC_TS)) %>%
 
 dt_merge <- merge(crash_veh_dt, crash_moto_dt, all = TRUE)
 
-`ggplot(data = dt_merge, aes(x = ACC_DATE, y = total_count, group = CAT, color = CAT)) +
+ggplot(data = dt_merge, aes(x = ACC_DATE, y = total_count, group = CAT, color = CAT)) +
   geom_line() +
   geom_point() +
   scale_x_continuous(breaks = 1:31, name = "Day") +
@@ -188,15 +329,17 @@ dt_merge <- merge(crash_veh_dt, crash_moto_dt, all = TRUE)
   labs(y = "Total Count", color = "Category") +
   theme_bw() +
   theme(
-    legend.position = "right", 
+    legend.position = "right",
     legend.direction = "vertical",
     legend.title.position = "top",
     legend.position.inside = c(0.19, 0.9),
     legend.background = element_rect(fill = "lightgrey"),
     axis.line = element_blank(),
     panel.grid.minor.x = element_blank()
-    ) + 
+  ) +
   labs(
     title = "Accidents in Arizona based on Day of Month", subtitle = "2020-2022"
-  )`
+  )
+
+ggsave("az_dom.png", path = "plots")
 ```

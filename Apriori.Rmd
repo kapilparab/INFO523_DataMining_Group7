@@ -1,0 +1,99 @@
+---
+title: "Apriori"
+author: "Kapil Parab/Nicaise Irambona"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Importing libraries
+
+```{r}
+library(tidyverse)
+library(arules)
+library(arulesViz)
+```
+
+# Reading dataset
+
+```{r}
+
+vehicles <-
+    list.files(path = "./data/cleansed/vehicles/", pattern = "*.csv", full.names = TRUE) %>% 
+    map_df(~read_csv(., show_col_types = FALSE))
+
+motorcycles <-
+    list.files(path = "./data/cleansed/motorcycles/", pattern = "*.csv", full.names = TRUE) %>% 
+    map_df(~read_csv(., show_col_types = FALSE))
+
+```
+
+```{r}
+vehicles_sub <- vehicles %>% within(., rm("CASE_ID", "STATE", "COUNTY", "VEH_MOD_YEAR", "VEH_BRAND", "VEH_MODEL", "LATITUDE", "LONGITUDE", "ACC_TS")) 
+
+vehicles_sub$AGE <- cut(vehicles_sub$AGE,
+  breaks = c(0, 18, 35, 50, 65, Inf),
+  labels = c("Child", "Youth", "Adult", "Senior", "Elderly")
+)
+
+vehicles_sub <- vehicles_sub %>%
+  mutate(
+    DRINKING_FLAG = case_when(
+      AGE != "Child" & 
+        PERSON_TYPE == "Driver" & 
+        DRINKING_FLAG == "Not Reported" ~ "Maybe",
+      .default = DRINKING_FLAG
+    ),
+    DRUGS_FLAG = case_when(
+      AGE != "Child" & 
+        PERSON_TYPE == "Driver" & 
+        DRUGS_FLAG == "Not Reported" ~ "Maybe",
+      .default = DRUGS_FLAG
+    )
+  )
+
+
+vehicles_sub <- data.frame(lapply(vehicles_sub, as.factor))
+```
+
+```{r}
+transactions <- as(vehicles_sub, "transactions")
+
+# Run Apriori algorithm
+rules <- apriori(transactions,
+  parameter = list(supp = 0.01, conf = 0.8, target = "rules"),
+  appearance = list(rhs = c("IS_DEAD=Yes"), default = "lhs")
+)
+
+# View the rules
+inspect(rules)
+```
+
+```{r}
+# Filter rules with high lift (indicating strong relationships)
+rules <- subset(rules, lift > 1.5)
+inspect(rules)
+```
+
+```{r}
+# Scatter plot of rules (default)
+plot(rules, method = "scatterplot", measure = c("support", "confidence"), shading = "lift", main = "Scatterplot of Rules")
+
+# Graph-based visualization
+plot(rules, method = "graph", engine = "htmlwidget", main = "Graph of Rules", max = 20)
+
+# Grouped matrix plot
+plot(rules, method = "grouped", main = "Grouped Matrix Plot")
+
+# Parallel coordinate plot
+plot(rules, method = "paracoord", control = list(reorder = TRUE), main = "Parallel Coordinate Plot")
+
+# Filter top 10 rules by lift for clearer visualization
+top_rules <- head(sort(rules, by = "lift"), 10)
+
+# Graph visualization for top 10 rules
+plot(top_rules, method = "graph", main = "Graph of Top 10 Rules")
+```
