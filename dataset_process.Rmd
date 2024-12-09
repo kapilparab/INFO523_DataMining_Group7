@@ -22,7 +22,7 @@ library(ggrepel)
 # Variables
 
 ```{r}
-year <- "2020"
+year <- "2022"
 
 read_from <- "raw"
 write_to <- "cleansed"

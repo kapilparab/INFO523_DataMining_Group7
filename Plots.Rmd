@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(sf)
 library(tigris)
 library(tidyverse)
+library(ggrepel)
 ```
 
 ```{r}
@@ -22,7 +23,7 @@ library(tidyverse)
 us_states <- st_read("data/us_states/tl_2024_us_state.shp") %>%
   st_transform(., crs = 4326)
 
-# Getting Arizona state shape file
+# Getting Arizona state details
 az_counties <- counties("AZ", year = 2024) %>% st_transform(., crs = 4326)
 
 az_landmarks <- landmarks("AZ", year = 2024) %>% st_transform(., crs = 4326)
@@ -46,6 +47,10 @@ motorcycles <-
   map_df(~ read_csv(., show_col_types = FALSE))
 ```
 
+```{r}
+View(vehicles %>% select(VEH_MOD_YEAR) %>% distinct())
+```
+
 # Visualizing vehicle accidents across US
 
 ```{r}
@@ -66,8 +71,15 @@ ggplot(us_states_veh) +
     data = us_state_veh_label,
     aes(label = NAME, geometry = geometry),
     stat = "sf_coordinates",
-    size = 2,
-    min.segment.length = 0
+    size = 3,
+    max.iter = 10000,
+    max.time = 10,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    min.segment.length = 0.1,
+    segment.color = "gray",
+    force = 2,
+    max.overlaps = Inf
   ) +
   theme_bw() +
   labs(title = "Vehicle Accidents across United States", subtitle = "2020-2022") +
@@ -114,8 +126,15 @@ ggplot(us_states_moto) +
     data = us_state_moto_label,
     aes(label = NAME, geometry = geometry),
     stat = "sf_coordinates",
-    size = 2,
-    min.segment.length = 0
+    size = 3,
+    max.iter = 10000,
+    max.time = 10,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    min.segment.length = 0.1,
+    segment.color = "gray",
+    force = 2,
+    max.overlaps = Inf
   ) +
   theme_bw() +
   labs(title = "Motorcycle Accidents across United States", subtitle = "2020-2022") +
@@ -169,13 +188,18 @@ ggplot() +
   geom_sf(data = az_city_outline, fill = "green") +
   geom_sf(data = az_road, color = "black") +
   geom_label_repel(
-    data = az_city_labels,
+    data = az_city_outline,
     aes(label = Name, geometry = geometry),
     stat = "sf_coordinates",
-    size = 2,
-    max.iter = 50000,
-    max.time = 6,
-    max.overlaps = 12
+    size = 3,
+    max.iter = 10000,
+    max.time = 10,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    min.segment.length = 0.1,
+    segment.color = "gray",
+    force = 2,
+    max.overlaps = Inf
   ) +
   labs(title = "Cities and Major Roadways of Arizona") +
   theme(axis.title = element_blank(), axis.ticks = element_blank())
@@ -195,10 +219,15 @@ ggplot() +
     data = az_city_labels,
     aes(label = Name, geometry = geometry),
     stat = "sf_coordinates",
-    size = 2,
-    max.iter = 50000,
-    max.time = 6,
-    max.overlaps = 12
+    size = 3,
+    max.iter = 10000,
+    max.time = 10,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    min.segment.length = 0.1,
+    segment.color = "gray",
+    force = 2,
+    max.overlaps = Inf
   ) +
   labs(title = "Vehicle Crashes in Arizona", subtitle = "2020-2022") +
   theme(axis.title = element_blank(), axis.ticks = element_blank())
@@ -218,13 +247,19 @@ ggplot() +
     data = az_city_labels,
     aes(label = Name, geometry = geometry),
     stat = "sf_coordinates",
-    size = 2,
-    max.iter = 50000,
-    max.time = 6,
-    max.overlaps = 12
+    size = 3,
+    max.iter = 10000,
+    max.time = 10,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    min.segment.length = 0.1,
+    segment.color = "gray",
+    force = 2,
+    max.overlaps = Inf
   ) +
   labs(title = "Motorcycle Crashes in Arizona", subtitle = "2020-2022") +
   theme(axis.title = element_blank(), axis.ticks = element_blank())
+
 
 ggsave("az_moto_acc.png", path = "plots")
 ```
@@ -250,7 +285,15 @@ ggplot() +
     data = ua_outline,
     aes(label = FULLNAME, geometry = geometry),
     stat = "sf_coordinates",
-    size = 2
+    size = 3,
+    max.iter = 10000,
+    max.time = 10,
+    box.padding = 0.5,
+    point.padding = 0.3,
+    min.segment.length = 0.1,
+    segment.color = "gray",
+    force = 2,
+    max.overlaps = Inf
   ) +
   labs(title = "Vehicle & Motorcycle Crashes in Arizona", subtitle = "2020-2022") +
   theme_bw() +
@@ -342,4 +385,138 @@ ggplot(data = dt_merge, aes(x = ACC_DATE, y = total_count, group = CAT, color = 
   )
 
 ggsave("az_dom.png", path = "plots")
+```
+
+# Probability of Survival Given Airbag Deployment and Location
+
+```{r}
+harm_event_fil <- c("Pedestrian", "Pedalcyclist", "Fell/Jumped from Vehicle", "Unknown")
+col_filter <- c("Cargo/Vehicle Parts Set-In-Motion", "Non-Collision", "Not Reported", "Other Objects or Person Set-In-Motion", "Reported as Unknown", "Undercarriage")
+
+airbag_data <- vehicles %>%
+    filter(!is.na(AIRBAG_DEPLOYED) & 
+           !is.na(AIRBAG_LOC) & 
+           !is.na(INJURY) &
+           !HARM_EV_TYPE %in% harm_event_fil &
+           !IMPACT_LOC %in% col_filter
+   ) %>%
+  select(IMPACT_LOC, AIRBAG_DEPLOYED, AIRBAG_LOC, INJURY) %>%
+  mutate(AIRBAG_LOC = case_when(
+    AIRBAG_LOC == "Curtain (roof)" ~ "Curtain",
+    AIRBAG_LOC == "Other (Knee, air belt, etc.)" ~ "Rear Curtain etc",
+    AIRBAG_LOC == "Side (door, seatback)" ~ "Door, Seatback",
+    .default = AIRBAG_LOC
+  ),
+  SURVIVAL = ifelse(INJURY != "Death", 1, 0)
+)
+
+# Calculate overall probabilities of airbag deployment and survival
+overall_prob <- airbag_data %>%
+  summarise(
+    prob_airbag_deployed = mean(AIRBAG_DEPLOYED == "Yes"),
+    prob_survival = mean(SURVIVAL)
+  )
+
+conditional_prob <- airbag_data %>%
+  filter(AIRBAG_DEPLOYED == "Yes") %>%
+  group_by(IMPACT_LOC, AIRBAG_LOC) %>%
+  summarise(
+    total_cases = n(),
+    survival_cases = sum(SURVIVAL),
+    prob_survival_given_airbag = mean(SURVIVAL)
+  )
+
+ggplot(conditional_prob, aes(x = AIRBAG_LOC, y = prob_survival_given_airbag)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Probability of Survival Given Airbag Deployment and Location",
+    x = "Airbag Location",
+    y = "Probability of Survival"
+  ) +
+  facet_grid(. ~ IMPACT_LOC, scales = "free", space = "free") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    strip.text = element_text(size = 6),
+    plot.margin = margin(t = 10, r = 10, b = 20, l = 10, unit = "pt")
+  )
+
+ggsave("airbag_surv.png", path = "plots")
+```
+
+# Probability of Survival Given Presense of Helment and Impact Location
+
+```{r}
+harm_event_fil <- c("Unknown")
+col_filter <- c("Cargo/Vehicle Parts Set-In-Motion", "Non-Collision", "Not Reported", "Other Objects or Person Set-In-Motion", "Reported as Unknown", "Undercarriage")
+
+helmet_data <- motorcycles %>%
+    filter(!is.na(HELMET_PRESENT) &
+           !is.na(INJURY) &
+           !HARM_EV_TYPE %in% harm_event_fil &
+           !IMPACT_LOC %in% col_filter &
+             HELMET_MISUSE == "No"
+   ) %>%
+  select(IMPACT_LOC, HELMET_PRESENT, INJURY) %>%
+  mutate(SURVIVAL = ifelse(INJURY != "Death", 1, 0)
+)
+
+conditional_prob <- helmet_data %>%
+  filter(HELMET_PRESENT == "Yes") %>%
+  group_by(IMPACT_LOC) %>%
+  summarise(
+    prob_survival = mean(SURVIVAL)
+  )
+
+ggplot(conditional_prob, aes(x = IMPACT_LOC, y = prob_survival)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Probability of Survival Given Helment and Impact Location",
+    x = "Impact Location",
+    y = "Probability of Survival"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 20)
+  )
+
+ggsave("helmet_surv.png", path = "plots")
+```
+
+
+# Pie Charts
+
+```{r}
+View(vehicles %>% select(HARM_EV_TYPE) %>% distinct())
+```
+
+```{r}
+
+harm_event_fil <- c("Pedestrian", "Pedalcyclist", "Fell/Jumped from Vehicle", "Unknown", "Non-Motorist on Personal Conveyance")
+
+# Summarize the data to count occurrences of HARM_EV_TYPE for each INJURY
+harm_event_summary <- vehicles %>%
+  filter(., INJURY != "Dead Prior Crash" & !HARM_EV_TYPE %in% harm_event_fil) %>%
+  group_by(INJURY, HARM_EV_TYPE) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Filter to get the top 5 HARM_EV_TYPE for each INJURY category
+top_5_harm_events <- harm_event_summary %>%
+  group_by(INJURY) %>%
+  slice_max(order_by = count, n = 5) %>%
+  ungroup()
+
+# Visualize the data using a faceted bar chart
+ggplot(top_5_harm_events, aes(x = reorder(HARM_EV_TYPE, -count), y = count, fill = INJURY)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  labs(
+    title = "Top 5 Harm Event Types by Injury Category",
+    x = "Harm Event Type",
+    y = "Count"
+  ) +
+  facet_wrap(~INJURY, scales = "free") +  # Facet by INJURY
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+    strip.text = element_text(size = 10)  # Adjust facet label size
+  )
+
 ```

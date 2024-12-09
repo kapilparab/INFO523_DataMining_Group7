@@ -1,0 +1,77 @@
+---
+title: "PAM"
+author: "Kapil Parab/Nicaise Irambona"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load necessary libraries
+library(cluster)
+library(dplyr)
+library(ggplot2)
+```
+
+# Reading dataset
+
+```{r}
+vehicles <-
+  list.files(path = "./data/cleansed/vehicles/", pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~ read_csv(., show_col_types = FALSE))
+
+motorcycles <-
+  list.files(path = "./data/cleansed/motorcycles/", pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~ read_csv(., show_col_types = FALSE))
+```
+
+```{r}
+# Select relevant features for clustering
+features <- vehicles %>%
+  select(WEATHER, LIGHT_COND, VEH_CATEGORY, INJURY) %>%
+  na.omit() %>% # Remove rows with missing values
+  mutate(across(everything(), as.factor))
+
+sampled_features <- features %>% sample_n(10000)  # Adjust the sample size as needed
+  
+# Compute Gower Distance
+gower_dist <- daisy(sampled_features, metric = "gower")
+
+# Perform PAM clustering
+set.seed(42)  # For reproducibility
+pam_result <- pam(gower_dist, k = 4)  # Set the number of clusters (k)
+
+# Add cluster labels to the original data
+vehicles$Cluster <- NA
+vehicles$Cluster[rownames(sampled_features)] <- pam_result$clustering
+
+# Summarize cluster characteristics
+cluster_summary <- vehicles %>%
+  group_by(Cluster) %>%
+  summarise(
+    Count = n(),
+    Weather_Mode = names(which.max(table(WEATHER))),
+    Light_Cond_Mode = names(which.max(table(LIGHT_COND))),
+    Vehicle_Category_Mode = names(which.max(table(VEH_CATEGORY))),
+    Injury_Mode = names(which.max(table(INJURY)))
+  )
+
+print(cluster_summary)
+
+# Visualize clustering using PCA for dimensionality reduction
+pca_result <- prcomp(as.matrix(gower_dist))
+vehicles_with_clusters <- features
+vehicles_with_clusters$Cluster <- pam_result$clustering
+
+ggplot(vehicles_with_clusters, aes(x = pca_result$x[,1], y = pca_result$x[,2], color = as.factor(Cluster))) +
+  geom_point(alpha = 0.7) +
+  labs(title = "PAM Clustering Visualization (Gower Distance)",
+       x = "Principal Component 1",
+       y = "Principal Component 2",
+       color = "Cluster") +
+  theme_minimal()
+
+```

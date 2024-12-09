@@ -1,0 +1,79 @@
+---
+title: "K Means"
+author: "Kapil Parab/Nicaise Irambona"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(caret)
+library(ggplot2)
+library(ggfortify)
+```
+
+# Reading dataset
+
+```{r}
+vehicles <-
+  list.files(path = "./data/cleansed/vehicles/", pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~ read_csv(., show_col_types = FALSE))
+
+motorcycles <-
+  list.files(path = "./data/cleansed/motorcycles/", pattern = "*.csv", full.names = TRUE) %>%
+  map_df(~ read_csv(., show_col_types = FALSE))
+```
+
+```{r}
+# Find the unique values for each variable 
+sapply(lapply(vehicles_sub, unique), length)
+```
+
+```{r}
+injury_target <- vehicles$INJURY
+
+vehicles$AGE <- cut(vehicles$AGE, 
+      breaks = c(0, 5, 12, 18, 35, 50, 65, Inf), 
+      labels = c("Infant", "Child", "Teen", "Adult", "Adult", "Senior", "Elderly"),
+      include.lowest = TRUE
+)
+
+vehicles_sub <- vehicles %>% within(., rm("CASE_ID", "STATE", "COUNTY", "VEH_MOD_YEAR", "VEH_BRAND", "VEH_MODEL", "LATITUDE", "LONGITUDE", "ACC_TS", "AIRBAG_DEPLOYED", "INJURY", "ROLLOVER", "FIRE_FLAG")) %>%
+  mutate(across(where(is.character), as.factor))
+
+constant_columns <- vehicles_sub %>%
+  summarise(across(everything(), ~ n_distinct(.))) %>%
+  gather(key = "Column", value = "Unique_Values") %>%
+  filter(Unique_Values <= 1) %>%
+  pull(Column)
+
+
+# Convert categorical variables to numeric using one-hot encoding
+vehicles_encoded <- dummyVars("~ .", data = vehicles_sub)
+vehicles_matrix <- predict(vehicles_encoded, newdata = vehicles_sub)
+vehicles_scaled <- scale(vehicles_matrix)  # Scale the features
+
+```
+
+```{r}
+# Apply K-Means clustering
+set.seed(42)
+kmeans_result <- kmeans(vehicles_scaled, centers = length(unique(injury_target)), nstart = 25)
+
+# Add cluster labels to the dataset
+vehicles$Cluster <- kmeans_result$cluster
+
+# Evaluate clustering by comparing with INJURY
+confusion_matrix <- table(Predicted_Cluster = kmeans_result$cluster, Actual_INJURY = injury_target)
+print(confusion_matrix)
+
+# Visualize the clustering result using PCA (dimensionality reduction)
+
+pca_result <- prcomp(vehicles_scaled)
+autoplot(pca_result, data = vehicles, colour = "Cluster", shape = "INJURY", 
+         main = "K-Means Clustering Visualization")
+```

@@ -1,8 +1,13 @@
-install.packages("dplyr")
-install.packages("ggplot2")
-install.packages("tidyverse")
-install.packages("tigris")
-install.packages("ggrepel")
-install.packages("arules")
-install.packages("arulesViz")
-install.packages("randomForest")
+packages <- c("dplyr", "ggplot2", "tidyverse", "tigris", 
+              "ggrepel", "arules", "arulesViz", "randomForest", "sf"
+)
+
+packagecheck <- match( packages, utils::installed.packages()[,1] )
+
+packagestoinstall <- packages[ is.na( packagecheck ) ]
+
+if( length( packagestoinstall ) > 0L ) {
+  utils::install.packages( packagestoinstall)
+} else {
+  print( "All requested packages already installed" )
+}

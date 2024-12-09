@@ -69,8 +69,26 @@ test_data <- vehicles_sub[-train_index, ]
 ```
 
 ```{r}
-# Fit the random forest model
-rf_model <- randomForest(INJURY ~ ., data = train_data, ntree = 500, mtry = 3, importance = TRUE)
+# Grid search example for ntree and mtry
+results$Accuracy <- NA
+
+for (i in 1:nrow(results)) {
+  rf_model <- randomForest(INJURY ~ ., data = train_data, 
+                           ntree = results$ntree[i], 
+                           mtry = results$mtry[i], 
+                           nodesize = results$nodesize[i],
+                           sampsize = floor(0.7 * nrow(train_data)),
+                           importance = TRUE
+                           )
+  results$Accuracy[i] <- mean(rf_model$predicted == train_data$INJURY)
+}
+
+print(results)
+```
+
+```{r}
+# Best Random Forest Model. Grid Search Results
+rf_model <- randomForest(INJURY ~ ., data = train_data, ntree = 500, mtry = 4, nodesize = 1, sampsize = floor(0.7 * nrow(train_data)), importance = TRUE)
 
 # View model summary
 print(rf_model)
