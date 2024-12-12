@@ -1,5 +1,5 @@
 <img style="display: block; margin-left: auto;
-margin-right: auto;width: 80%;" src="https://phoenixmed.arizona.edu/sites/default/files/campus/marcomm/brand/master-logo/2-ua-horizontal/ua_horiz_rgb_4.png"></img>
+margin-right: auto;" src="https://phoenixmed.arizona.edu/sites/default/files/campus/marcomm/brand/master-logo/2-ua-horizontal/ua_horiz_rgb_4.png"></img>
 
 This project was developed for the course INFO 523 Data Mining instructed by Dr. Yan Han.
 
@@ -9,6 +9,16 @@ This project was developed for the course INFO 523 Data Mining instructed by Dr.
 
 # Dataset
 
-The dataset was downloaded from [Kaggle](https://www.kaggle.com/datasets/waqi786/youth-smoking-and-drug-dataset/data).
+The dataset was downloaded from [nhtsa.gov](https://www.nhtsa.gov/research-data/fatality-analysis-reporting-system-fars).
 
-This dataset provides a comprehensive overview of youth smoking and drug experimentation trends from 2020 to 2024. With approximately 10,000 records, it includes various demographic factors such as age groups, gender, socioeconomic status, and influences from family and peers.
+Our dataset has been derived from Fatality Analysis Reporting System (FARS) system and the Crash Report Sampling System (CRSS), maintained by the National Highway Trafﬁc Safety Administration (NHTSA) of the United States.
+
+These systems collect and analyze motor vehicle trafﬁc crash data to enhance road safety, reduce injuries, and prevent fatalities on the trafﬁcways.
+
+Dataset documentation can be found in ```data/raw/``` directory.
+
+# Instructions
+
+1. Clone repository
+2. Open project in RStudio
+3. Execute ```package_install.r``` to install all required packages.
