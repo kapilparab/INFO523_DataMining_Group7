@@ -109,12 +109,6 @@ accident_data_mutate <- accident_data %>%
 ```
 
 ```{r}
-person_data %>%
-  select(FIRE_EXPNAME) %>%
-  distinct()
-```
-
-```{r}
 select_cols <- c("ST_CASE", "STATENAME", "COUNTYNAME", "ACC_TS", "ACC_TOD", "LGT_CONDNAME", "WEATHERNAME", "ACC_LOC", "LATITUDE", "LONGITUD", "HARM_EVNAME.x", "MOD_YEAR", "VPICMAKENAME", "VPICMODELNAME", "VEH_CATEGORY", "AGE", "SEXNAME", "PER_TYPNAME", "SEAT_POSNAME", "REST_USENAME", "REST_MISUSE", "HELM_USENAME", "HELM_MISNAME", "COLL_EV_TYPE", "IMPACT_LOC", "DRINKING_FLAG", "DRUGS_FLAG", "ROLLOVER", "FIRE_FLAG", "EJ_DEGREE", "EJ_PATH", "AIRBAG_DEPLOYED", "AIR_BAGNAME", "AIRBAG_LOC", "INJURY")
 
 accident_clean <- person_data %>%

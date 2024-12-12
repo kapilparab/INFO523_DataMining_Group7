@@ -1,5 +1,6 @@
 packages <- c("dplyr", "ggplot2", "tidyverse", "tigris", 
-              "ggrepel", "arules", "arulesViz", "randomForest", "sf"
+              "ggrepel", "arules", "arulesViz", "randomForest", "sf",
+              "caret", "ggfortify"
 )
 
 packagecheck <- match( packages, utils::installed.packages()[,1] )

@@ -16,6 +16,8 @@ library(sf)
 library(tigris)
 library(tidyverse)
 library(ggrepel)
+library(ggforce)
+library(scales)
 ```
 
 ```{r}
@@ -45,10 +47,6 @@ vehicles <-
 motorcycles <-
   list.files(path = "./data/cleansed/motorcycles/", pattern = "*.csv", full.names = TRUE) %>%
   map_df(~ read_csv(., show_col_types = FALSE))
-```
-
-```{r}
-View(vehicles %>% select(VEH_MOD_YEAR) %>% distinct())
 ```
 
 # Visualizing vehicle accidents across US
@@ -161,6 +159,7 @@ ggplot(us_states_moto) +
 
 ggsave("veh_moto_us.png", path = "plots")
 ```
+
 # Filtering dataset to visualize Arizona accidents
 
 ```{r}
@@ -400,25 +399,18 @@ airbag_data <- vehicles %>%
            !HARM_EV_TYPE %in% harm_event_fil &
            !IMPACT_LOC %in% col_filter
    ) %>%
-  select(IMPACT_LOC, AIRBAG_DEPLOYED, AIRBAG_LOC, INJURY) %>%
+  select(PERSON_TYPE, IMPACT_LOC, AIRBAG_DEPLOYED, AIRBAG_LOC, INJURY) %>%
   mutate(AIRBAG_LOC = case_when(
     AIRBAG_LOC == "Curtain (roof)" ~ "Curtain",
-    AIRBAG_LOC == "Other (Knee, air belt, etc.)" ~ "Rear Curtain etc",
+    AIRBAG_LOC == "Other (Knee, air belt, etc.)" ~ "Other",
     AIRBAG_LOC == "Side (door, seatback)" ~ "Door, Seatback",
     .default = AIRBAG_LOC
   ),
   SURVIVAL = ifelse(INJURY != "Death", 1, 0)
 )
 
-# Calculate overall probabilities of airbag deployment and survival
-overall_prob <- airbag_data %>%
-  summarise(
-    prob_airbag_deployed = mean(AIRBAG_DEPLOYED == "Yes"),
-    prob_survival = mean(SURVIVAL)
-  )
-
-conditional_prob <- airbag_data %>%
-  filter(AIRBAG_DEPLOYED == "Yes") %>%
+driver_airbag_prob <- airbag_data %>%
+  filter(AIRBAG_DEPLOYED == "Yes" & PERSON_TYPE == "Driver") %>%
   group_by(IMPACT_LOC, AIRBAG_LOC) %>%
   summarise(
     total_cases = n(),
@@ -426,10 +418,20 @@ conditional_prob <- airbag_data %>%
     prob_survival_given_airbag = mean(SURVIVAL)
   )
 
-ggplot(conditional_prob, aes(x = AIRBAG_LOC, y = prob_survival_given_airbag)) +
+passenger_airbag_prob <- airbag_data %>%
+  filter(AIRBAG_DEPLOYED == "Yes" & PERSON_TYPE != "Driver") %>%
+  group_by(IMPACT_LOC, AIRBAG_LOC) %>%
+  summarise(
+    total_cases = n(),
+    survival_cases = sum(SURVIVAL),
+    prob_survival_given_airbag = mean(SURVIVAL)
+  )
+
+ggplot(driver_airbag_prob, aes(x = AIRBAG_LOC, y = prob_survival_given_airbag)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   labs(
     title = "Probability of Survival Given Airbag Deployment and Location",
+    subtitle = "Driver",
     x = "Airbag Location",
     y = "Probability of Survival"
   ) +
@@ -440,9 +442,25 @@ ggplot(conditional_prob, aes(x = AIRBAG_LOC, y = prob_survival_given_airbag)) +
     plot.margin = margin(t = 10, r = 10, b = 20, l = 10, unit = "pt")
   )
 
-ggsave("airbag_surv.png", path = "plots")
-```
+ggsave("airbag_surv_driver.png", path = "plots", dpi = 350)
 
+ggplot(passenger_airbag_prob, aes(x = AIRBAG_LOC, y = prob_survival_given_airbag)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Probability of Survival Given Airbag Deployment and Location",
+    subtitle = "Passenger",
+    x = "Airbag Location",
+    y = "Probability of Survival"
+  ) +
+  facet_grid(. ~ IMPACT_LOC, scales = "free", space = "free") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    strip.text = element_text(size = 6),
+    plot.margin = margin(t = 10, r = 10, b = 20, l = 10, unit = "pt")
+  )
+
+ggsave("airbag_surv_pass.png", path = "plots", dpi = 350)
+```
 # Probability of Survival Given Presense of Helment and Impact Location
 
 ```{r}
@@ -480,6 +498,275 @@ ggplot(conditional_prob, aes(x = IMPACT_LOC, y = prob_survival)) +
 
 ggsave("helmet_surv.png", path = "plots")
 ```
+
+# Distribution of crashes across all states based on weather
+
+```{r}
+View(vehicles %>% select(WEATHER) %>% distinct())
+```
+
+```{r}
+weather_fil <- c("Unknown", "Other")
+
+weather_by_state <- vehicles %>%
+  filter(., ! WEATHER %in% weather_fil) %>%
+  select(STATE, WEATHER) %>%
+    group_by(STATE, WEATHER) %>%
+    summarise(count = n())
+
+ggplot(weather_by_state, aes(x = WEATHER, y = count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Weather Conditions by State",
+    x = "Weather Condition",
+    y = "Count"
+  ) +
+  facet_wrap(vars(STATE), ncol = 10, scales = "free_y") +
+  theme(
+    axis.text.x = element_text(angle = 90),  # Rotate x-axis labels for clarity
+    strip.text = element_text(size = 8)  # Adjust facet label size
+  )
+
+for(i in 1:6){
+  
+  ggplot(weather_by_state, aes(x = WEATHER, y = count)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Weather Conditions by State",
+    x = "Weather Condition",
+    y = "Count"
+  ) +
+  facet_wrap_paginate(vars(STATE), ncol = 3, nrow = 3, page = i, scales = "free") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for clarity
+    strip.text = element_text(size = 8)  # Adjust facet label size
+  )
+  
+  ggsave(paste0("weather_state_", i, ".png"), dpi = 350, path = "plots")
+
+}
+
+```
+
+# Accidents Across Age Groups
+
+## Vehicles
+
+```{r}
+# Define age groups
+veh_data <- vehicles %>%
+  mutate(Age_Group = case_when(
+    AGE < 18 ~ "Under 18",
+    AGE >= 18 & AGE <= 25 ~ "18-25",
+    AGE >= 26 & AGE <= 35 ~ "26-35",
+    AGE >= 36 & AGE <= 50 ~ "36-50",
+    AGE > 50 ~ "Above 50",
+    TRUE ~ "Unknown"
+  )) %>%
+  filter(Age_Group != "Unknown" & PERSON_TYPE == "Driver") %>%
+  mutate(Age_Group = factor(Age_Group, levels = c("Under 18", "18-25", "26-35", "36-50", "Above 50")))
+```
+
+### Drinking
+
+```{r}
+veh_drink_total <- veh_data %>%
+  filter(., DRINKING_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+veh_drink_death <- veh_data %>%
+  filter(INJURY == "Death" & DRINKING_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Create a bar chart
+ggplot() +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Total"), 
+    data = veh_drink_total,
+    stat = "identity", show.legend = FALSE
+  ) +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Death"), 
+    data = veh_drink_death,
+    stat = "identity", show.legend = FALSE
+  ) +
+  scale_y_continuous(
+    breaks = pretty_breaks(n = 10)  # Generate 10 evenly spaced breaks
+  ) +
+  scale_fill_manual(
+    values = c("Total" = "#1fbcff", "Death" = "#ff661f"),  # Assign colors to categories
+    labels = c("Total Count", "Deaths")              # Legend labels
+  ) +
+  labs(
+    title = "Accidents Across Age Groups",
+    subtitle = "Drinking and Death",
+    x = "Age Group",
+    y = "Count"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+  )
+
+ggsave("veh_drink_death.png", path = "plots", dpi = 350)
+```
+### Drugs
+
+```{r}
+veh_drugs_total <- veh_data %>%
+  filter(., DRUGS_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+veh_drugs_death <- veh_data %>%
+  filter(INJURY == "Death" & DRUGS_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Create a bar chart
+ggplot() +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Total"), 
+    data = veh_drugs_total,
+    stat = "identity", show.legend = FALSE
+  ) +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Death"), 
+    data = veh_drugs_death,
+    stat = "identity", show.legend = FALSE
+  ) +
+  scale_y_continuous(
+    breaks = pretty_breaks(n = 10)  # Generate 10 evenly spaced breaks
+  ) +
+  scale_fill_manual(
+    values = c("Total" = "#1fbcff", "Death" = "#ff661f"),  # Assign colors to categories
+    labels = c("Total Count", "Deaths")              # Legend labels
+  ) +
+  labs(
+    title = "Accidents Across Age Groups",
+    subtitle = "Drugs and Death",
+    x = "Age Group",
+    y = "Count"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+  )
+
+ggsave("veh_drugs_death.png", path = "plots", dpi = 350)
+```
+
+## Motorcycles
+
+```{r}
+# Define age groups
+moto_data <- motorcycles %>%
+  mutate(Age_Group = case_when(
+    AGE < 18 ~ "Under 18",
+    AGE >= 18 & AGE <= 25 ~ "18-25",
+    AGE >= 26 & AGE <= 35 ~ "26-35",
+    AGE >= 36 & AGE <= 50 ~ "36-50",
+    AGE > 50 ~ "Above 50",
+    TRUE ~ "Unknown"
+  )) %>%
+  filter(Age_Group != "Unknown" & SEAT_POS == "Rider") %>%
+  mutate(Age_Group = factor(Age_Group, levels = c("Under 18", "18-25", "26-35", "36-50", "Above 50")))
+```
+
+### Drinking
+
+```{r}
+moto_drink_total <- moto_data %>%
+  filter(., DRINKING_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+moto_drink_death <- moto_data %>%
+  filter(INJURY == "Death" & DRINKING_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Create a bar chart
+ggplot() +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Total"), 
+    data = moto_drink_total,
+    stat = "identity", show.legend = FALSE
+  ) +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Death"), 
+    data = moto_drink_death,
+    stat = "identity", show.legend = FALSE
+  ) +
+  scale_y_continuous(
+    breaks = pretty_breaks(n = 10)  # Generate 10 evenly spaced breaks
+  ) +
+  scale_fill_manual(
+    values = c("Total" = "#1fbcff", "Death" = "#ff661f"),  # Assign colors to categories
+    labels = c("Total Count", "Deaths")              # Legend labels
+  ) +
+  labs(
+    title = "Accidents Across Age Groups",
+    subtitle = "Drinking and Death",
+    x = "Age Group",
+    y = "Count"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+  )
+
+ggsave("moto_drink_death.png", path = "plots", dpi = 350)
+```
+### Drugs
+
+```{r}
+moto_drugs_total <- moto_data %>%
+  filter(., DRUGS_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+moto_drugs_death <- moto_data %>%
+  filter(INJURY == "Death" & DRUGS_FLAG == "Yes") %>%
+  group_by(Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Create a bar chart
+ggplot() +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Total"), 
+    data = moto_drugs_total,
+    stat = "identity", show.legend = FALSE
+  ) +
+  geom_bar(
+    mapping = aes(x = Age_Group, y = Count, fill = "Death"), 
+    data = moto_drugs_death,
+    stat = "identity", show.legend = FALSE
+  ) +
+  scale_y_continuous(
+    breaks = pretty_breaks(n = 10)  # Generate 10 evenly spaced breaks
+  ) +
+  scale_fill_manual(
+    values = c("Total" = "#1fbcff", "Death" = "#ff661f"),  # Assign colors to categories
+    labels = c("Total Count", "Deaths")              # Legend labels
+  ) +
+  labs(
+    title = "Accidents Across Age Groups",
+    subtitle = "Drugs and Death",
+    x = "Age Group",
+    y = "Count"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+  )
+
+ggsave("moto_drugs_death.png", path = "plots", dpi = 350)
+```
+
+
 
 
 # Pie Charts
